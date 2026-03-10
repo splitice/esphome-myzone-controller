@@ -7,13 +7,16 @@ namespace esphome {
 namespace myzone {
 
 static const char *const TAG = "myzone";
-static const uint8_t REQUEST_STATE = 0xC0;
+static const uint8_t COMMAND_FRAME_START = 0xC0;
+static const uint8_t COMMAND_FRAME_END = 0xFF;
+static const uint8_t REQUEST_STATE_BUTTON_CODE = 0x00;
 static const uint8_t ZONE_COUNT = 6;
 static const uint8_t ZONE_MASK_ALL = (1 << ZONE_COUNT) - 1;
 static const uint8_t ZONE_RESYNC_INDEX = 0;
 static const uint32_t COMMAND_ECHO_IGNORE_WINDOW_MS = 250;
 static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
 static const uint32_t RESPONSE_WAIT_WINDOW_MS = 200;
+static const uint32_t RS485_DIRECTION_SETTLE_DELAY_US = 100;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
 static const uint8_t FRAME_LEN = 8;
 
@@ -24,7 +27,7 @@ void MyZoneSwitch::apply_state_from_controller(bool state) { this->publish_state
 void MyZoneController::setup() {
   if (this->rse_pin_ != nullptr) {
     this->rse_pin_->setup();
-    this->rse_pin_->digital_write(true);
+    this->rse_pin_->digital_write(false);
   }
 
   this->zone_state_pref_ = global_preferences->make_preference<uint8_t>(fnv1_hash(ZONE_MASK_PREF_KEY));
@@ -97,9 +100,10 @@ void MyZoneController::loop() {
 
 void MyZoneController::dump_config() {
   ESP_LOGCONFIG(TAG, "MyZone Controller:");
-  ESP_LOGCONFIG(TAG, "  Request byte: 0x%02X", REQUEST_STATE);
+  ESP_LOGCONFIG(TAG, "  Command frame: 0x%02X <button_code> 0x%02X", COMMAND_FRAME_START, COMMAND_FRAME_END);
+  ESP_LOGCONFIG(TAG, "  State request button code: 0x%02X", REQUEST_STATE_BUTTON_CODE);
   if (this->rse_pin_ != nullptr) {
-    ESP_LOGCONFIG(TAG, "  RSE (TX enable): configured (active-low)");
+    ESP_LOGCONFIG(TAG, "  RSE (TX enable): configured (active-high)");
   } else {
     ESP_LOGCONFIG(TAG, "  RSE (TX enable): not configured");
   }
@@ -142,23 +146,31 @@ void MyZoneController::toggle_zone(uint8_t index, bool state) {
 }
 
 void MyZoneController::request_state_() {
-  this->send_command_(REQUEST_STATE);
+  this->send_command_(REQUEST_STATE_BUTTON_CODE);
   this->last_state_request_ms_ = millis();
 }
 
 void MyZoneController::send_command_(uint8_t command) {
   if (this->rse_pin_ != nullptr) {
-    this->rse_pin_->digital_write(false);
+    this->rse_pin_->digital_write(true);
+    delayMicroseconds(RS485_DIRECTION_SETTLE_DELAY_US);
   }
 
+  this->write_byte(COMMAND_FRAME_START);
   this->write_byte(command);
+  this->write_byte(COMMAND_FRAME_END);
   this->flush();
+
+  if (this->rse_pin_ != nullptr) {
+    delayMicroseconds(RS485_DIRECTION_SETTLE_DELAY_US);
+  }
+
   this->reset_response_parser_();
   this->pending_response_command_ = command;
   this->response_wait_started_ms_ = millis();
 
   if (this->rse_pin_ != nullptr) {
-    this->rse_pin_->digital_write(true);
+    this->rse_pin_->digital_write(false);
   }
 }
 
