@@ -58,9 +58,6 @@ void MyZoneController::loop() {
       break;
     }
 
-    // log incoming byte for debugging
-    ESP_LOGW(TAG, "Read 0x%02X", value);
-
     // parsing of button command
     if (this->command_frame_pos_ > 0) {
       this->command_frame_buffer_[this->command_frame_pos_++] = value;
