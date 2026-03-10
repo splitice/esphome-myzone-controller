@@ -40,7 +40,6 @@ void MyZoneController::loop() {
       continue;
     }
     uint8_t new_mask = value & ZONE_MASK_ALL;
-    this->zone_enabled_mask_ |= new_mask;
     this->apply_zone_mask_(new_mask, true);
   }
 
@@ -75,8 +74,9 @@ void MyZoneController::toggle_zone(uint8_t index, bool state) {
     return;
   }
 
-  // Zone ZONE_RESYNC_INDEX (zone 1) is always allowed for resync; other zones must be enabled by the controller
-  if (index != ZONE_RESYNC_INDEX && !(this->zone_enabled_mask_ & (1 << index))) {
+  // Zone ZONE_RESYNC_INDEX (zone 1) is always allowed for resync;
+  // other zones are skipped if they are not configured in the controller
+  if (index != ZONE_RESYNC_INDEX && this->zone_switches_[index] == nullptr) {
     return;
   }
 
