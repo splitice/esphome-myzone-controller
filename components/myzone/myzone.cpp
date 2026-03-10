@@ -9,6 +9,7 @@ namespace myzone {
 static const char *const TAG = "myzone";
 static const uint8_t REQUEST_STATE = 0xC0;
 static const uint8_t ZONE_COUNT = 5;
+static const uint8_t ZONE_MASK_ALL = (1 << ZONE_COUNT) - 1;
 static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
 
@@ -22,6 +23,7 @@ void MyZoneController::setup() {
     this->rse_pin_->digital_write(true);
   }
 
+  this->zone_state_pref_ = global_preferences->make_preference<uint8_t>(fnv1_hash(ZONE_MASK_PREF_KEY));
   this->load_zone_mask_();
   this->apply_zone_mask_(this->zone_mask_, false);
   this->request_state_();
@@ -36,7 +38,7 @@ void MyZoneController::loop() {
     if (value == REQUEST_STATE) {
       continue;
     }
-    this->apply_zone_mask_(value & ((1 << ZONE_COUNT) - 1), true);
+    this->apply_zone_mask_(value & ZONE_MASK_ALL, true);
   }
 
   if (millis() - this->last_state_request_ms_ >= STATE_REQUEST_INTERVAL_MS) {
@@ -100,7 +102,7 @@ void MyZoneController::send_command_(uint8_t command) {
 }
 
 void MyZoneController::apply_zone_mask_(uint8_t mask, bool persist) {
-  this->zone_mask_ = mask & ((1 << ZONE_COUNT) - 1);
+  this->zone_mask_ = mask & ZONE_MASK_ALL;
   for (uint8_t i = 0; i < ZONE_COUNT; i++) {
     auto *zone = this->zone_switches_[i];
     if (zone == nullptr) {
@@ -116,7 +118,6 @@ void MyZoneController::apply_zone_mask_(uint8_t mask, bool persist) {
 void MyZoneController::save_zone_mask_() { this->zone_state_pref_.save(&this->zone_mask_); }
 
 void MyZoneController::load_zone_mask_() {
-  this->zone_state_pref_ = global_preferences->make_preference<uint8_t>(fnv1_hash(ZONE_MASK_PREF_KEY));
   if (!this->zone_state_pref_.load(&this->zone_mask_)) {
     this->zone_mask_ = 0;
   }
