@@ -33,6 +33,13 @@ class MyZoneController : public Component, public uart::UARTDevice {
   void toggle_zone(uint8_t index, bool state);
 
  protected:
+  enum class FrameValidationError {
+    NONE,
+    INVALID_LENGTH,
+    INVALID_ZONE_INDEX,
+    CHECKSUM_MISMATCH,
+  };
+
   void request_state_();
   void send_command_(uint8_t command);
   void apply_zone_mask_(uint8_t mask, bool persist);
@@ -41,6 +48,11 @@ class MyZoneController : public Component, public uart::UARTDevice {
   bool should_ignore_echo_(uint8_t value);
   bool is_waiting_for_response_() const;
   void flush_discarded_invalid_bytes_log_();
+  void reset_response_parser_();
+  uint8_t compute_zone_frame_checksum_(const uint8_t *frame) const;
+  bool parse_zone_frame_(const uint8_t *frame, uint8_t *zone_mask, FrameValidationError *error, uint8_t *error_index,
+                         uint8_t *expected, uint8_t *actual) const;
+  const char *frame_validation_error_to_string_(FrameValidationError error) const;
 
   GPIOPin *rse_pin_{nullptr};
   MyZoneSwitch *zone_switches_[6]{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
@@ -52,6 +64,8 @@ class MyZoneController : public Component, public uart::UARTDevice {
   uint8_t pending_response_command_{0};
   uint32_t response_wait_started_ms_{0};
   uint32_t discarded_invalid_byte_count_{0};
+  uint8_t response_frame_buffer_[8]{0};
+  uint8_t response_frame_pos_{0};
 };
 
 }  // namespace myzone
