@@ -14,7 +14,7 @@ static const uint8_t ZONE_COUNT = 6;
 static const uint8_t ZONE_MASK_ALL = (1 << ZONE_COUNT) - 1;
 static const uint8_t ZONE_RESYNC_INDEX = 0;
 static const uint32_t COMMAND_ECHO_IGNORE_WINDOW_MS = 250;
-static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
+static const uint32_t STATE_REQUEST_INTERVAL_MS = 100000;
 static const uint32_t RESPONSE_WAIT_WINDOW_MS = 200;
 static const uint32_t COMMAND_FRAME_TIMEOUT_MS = 50;
 static const uint8_t RESPONSE_FRAME_START = 0x08;
@@ -52,14 +52,14 @@ void MyZoneController::loop() {
     this->reset_command_parser_();
   }
 
-  while (this->available() > 0) {
+  while (this->available()) {
     uint8_t value = 0;
     if (!this->read_byte(&value)) {
       break;
     }
 
     // log incoming byte for debugging
-    ESP_LOGW(TAG, "Read byte 0x%02X", value);
+    ESP_LOGW(TAG, "Read 0x%02X", value);
 
     // parsing of button command
     if (this->command_frame_pos_ > 0) {
@@ -132,13 +132,16 @@ void MyZoneController::loop() {
 
       this->discarded_non_frame_start_byte_count_++;
       ESP_LOGD(TAG, "Discarding non-protocol-start byte 0x%02X", value);
+      this->reset_response_parser_();
+      this->reset_command_parser_();
+      
       continue;
     }
 
     
   }
 
-  if (millis() - this->last_state_request_ms_ >= STATE_REQUEST_INTERVAL_MS) {
+  if (this->response_frame_pos_ == 0 && this->command_frame_pos_ == 0) && (millis() - this->last_state_request_ms_) >= STATE_REQUEST_INTERVAL_MS) {
     this->request_state_();
   }
 }
@@ -187,7 +190,6 @@ void MyZoneController::toggle_zone(uint8_t index, bool state) {
   this->pending_zone_command_echo_ = zone_code;
   this->pending_zone_command_echo_ms_ = millis();
   this->send_command_(zone_code);
-  this->request_state_();
 }
 
 void MyZoneController::request_state_() {
@@ -200,6 +202,8 @@ void MyZoneController::send_command_(uint8_t command) {
     this->rse_pin_->digital_write(true);
     delayMicroseconds(RS485_DIRECTION_SETTLE_DELAY_US);
   }
+
+  ESP_LOGW(TAG, "Sending command byte 0x%02X", command);
 
   this->write_byte(COMMAND_FRAME_START);
   this->write_byte(command);
