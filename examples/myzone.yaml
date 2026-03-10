@@ -30,5 +30,7 @@ myzone:
     name: "Zone 4"
   zone_5:
     name: "Zone 5"
+  # Disable a zone to hide it from the UI.
+  # Zone 1 continues to be used for state synchronisation even when disabled.
   zone_6:
-    name: "Zone 6"
+    enabled: false
