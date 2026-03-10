@@ -13,12 +13,13 @@ CONF_ZONE_2 = "zone_2"
 CONF_ZONE_3 = "zone_3"
 CONF_ZONE_4 = "zone_4"
 CONF_ZONE_5 = "zone_5"
+CONF_ZONE_6 = "zone_6"
 
 myzone_ns = cg.esphome_ns.namespace("myzone")
 MyZoneController = myzone_ns.class_("MyZoneController", cg.Component, uart.UARTDevice)
 MyZoneSwitch = myzone_ns.class_("MyZoneSwitch", switch.Switch)
 
-ZONE_CONFS = [CONF_ZONE_1, CONF_ZONE_2, CONF_ZONE_3, CONF_ZONE_4, CONF_ZONE_5]
+ZONE_CONFS = [CONF_ZONE_1, CONF_ZONE_2, CONF_ZONE_3, CONF_ZONE_4, CONF_ZONE_5, CONF_ZONE_6]
 
 
 CONFIG_SCHEMA = cv.Schema(
@@ -39,6 +40,9 @@ CONFIG_SCHEMA = cv.Schema(
             MyZoneSwitch, icon=ICON_FAN
         ),
         cv.Optional(CONF_ZONE_5, default={CONF_NAME: "Zone 5"}): switch.switch_schema(
+            MyZoneSwitch, icon=ICON_FAN
+        ),
+        cv.Optional(CONF_ZONE_6, default={CONF_NAME: "Zone 6"}): switch.switch_schema(
             MyZoneSwitch, icon=ICON_FAN
         ),
     }
