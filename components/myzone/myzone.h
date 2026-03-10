@@ -48,7 +48,9 @@ class MyZoneController : public Component, public uart::UARTDevice {
   bool should_ignore_echo_(uint8_t value);
   bool is_waiting_for_response_() const;
   void flush_discarded_invalid_bytes_log_();
+  void flush_discarded_non_frame_start_bytes_log_();
   void reset_response_parser_();
+  void reset_command_parser_();
   uint8_t compute_zone_frame_checksum_(const uint8_t *frame) const;
   bool parse_zone_frame_(const uint8_t *frame, uint8_t *zone_mask, FrameValidationError *error, uint8_t *error_index,
                          uint8_t *expected, uint8_t *actual) const;
@@ -64,8 +66,11 @@ class MyZoneController : public Component, public uart::UARTDevice {
   uint8_t pending_response_command_{0};
   uint32_t response_wait_started_ms_{0};
   uint32_t discarded_invalid_byte_count_{0};
+  uint32_t discarded_non_frame_start_byte_count_{0};
   uint8_t response_frame_buffer_[8]{0};
   uint8_t response_frame_pos_{0};
+  uint8_t command_frame_buffer_[3]{0};
+  uint8_t command_frame_pos_{0};
 };
 
 }  // namespace myzone
