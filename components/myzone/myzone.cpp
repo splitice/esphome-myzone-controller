@@ -16,6 +16,7 @@ static const uint8_t ZONE_RESYNC_INDEX = 0;
 static const uint32_t COMMAND_ECHO_IGNORE_WINDOW_MS = 250;
 static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
 static const uint32_t RESPONSE_WAIT_WINDOW_MS = 200;
+static const uint8_t RESPONSE_FRAME_START = 0x08;
 static const uint32_t RS485_DIRECTION_SETTLE_DELAY_US = 100;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
 static const uint8_t FRAME_LEN = 8;
@@ -51,6 +52,7 @@ void MyZoneController::loop() {
       break;
     }
 
+    // parsing of button command
     if (this->command_frame_pos_ > 0) {
       this->command_frame_buffer_[this->command_frame_pos_++] = value;
       if (this->command_frame_pos_ < COMMAND_FRAME_LEN) {
@@ -60,7 +62,7 @@ void MyZoneController::loop() {
       const uint8_t button_code = this->command_frame_buffer_[1];
       const uint8_t frame_end = this->command_frame_buffer_[2];
       if (frame_end == COMMAND_FRAME_END) {
-        ESP_LOGI(TAG, "Observed network command button 0x%02X (ignored)", button_code);
+        ESP_LOGI(TAG, "Observed network command button 0x%02X", button_code);
       } else {
         ESP_LOGW(TAG, "Discarded invalid command frame [0x%02X 0x%02X 0x%02X]", this->command_frame_buffer_[0],
                  this->command_frame_buffer_[1], this->command_frame_buffer_[2]);
@@ -70,52 +72,57 @@ void MyZoneController::loop() {
       continue;
     }
 
-    if (this->response_frame_pos_ == 0) {
+    if(this->response_frame_pos_ > 0) {
+      this->response_frame_buffer_[this->response_frame_pos_++] = value;
+      if (this->response_frame_pos_ < FRAME_LEN) {
+        continue;
+      }
+
+      uint8_t new_mask = 0;
+      FrameValidationError error = FrameValidationError::NONE;
+      uint8_t error_index = 0;
+      uint8_t expected = 0;
+      uint8_t actual = 0;
+      const bool parsed = this->parse_zone_frame_(this->response_frame_buffer_, &new_mask, &error, &error_index, &expected, &actual);
+      if (parsed) {
+        this->apply_zone_mask_(new_mask, true);
+        if (this->pending_response_command_ != 0) {
+          this->pending_response_command_ = 0;
+        }
+        this->reset_response_parser_();
+        this->flush_discarded_invalid_bytes_log_();
+        continue;
+      }
+
+      ESP_LOGW(TAG,
+              "Discarded invalid frame [%02X %02X %02X %02X %02X %02X %02X %02X]: %s (index=%u expected=0x%02X got=0x%02X)",
+              this->response_frame_buffer_[0], this->response_frame_buffer_[1], this->response_frame_buffer_[2],
+              this->response_frame_buffer_[3], this->response_frame_buffer_[4], this->response_frame_buffer_[5],
+              this->response_frame_buffer_[6], this->response_frame_buffer_[7],
+              this->frame_validation_error_to_string_(error), error_index, expected, actual);
+      this->discarded_invalid_byte_count_ += FRAME_LEN;
+      this->reset_response_parser_();
+      this->flush_discarded_non_frame_start_bytes_log_();
+    }
+
+    // starting a response frame
+    if (this->response_frame_pos_ == 0 && this->command_frame_pos_ == 0) {
       if (value == COMMAND_FRAME_START) {
         this->flush_discarded_non_frame_start_bytes_log_();
         this->command_frame_buffer_[this->command_frame_pos_++] = value;
         continue;
       }
-
-      if (value != FRAME_LEN) {
-        this->discarded_non_frame_start_byte_count_++;
+      if(value == RESPONSE_FRAME_START) {
+        this->flush_discarded_non_frame_start_bytes_log_();
+        this->response_frame_buffer_[this->response_frame_pos_++] = value;
         continue;
       }
-      this->flush_discarded_non_frame_start_bytes_log_();
-      this->response_frame_buffer_[this->response_frame_pos_++] = value;
+      
+      ESP_LOGD(TAG, "Discarding non-protocol-start byte 0x%02X", value);
       continue;
     }
 
-    this->response_frame_buffer_[this->response_frame_pos_++] = value;
-    if (this->response_frame_pos_ < FRAME_LEN) {
-      continue;
-    }
-
-    uint8_t new_mask = 0;
-    FrameValidationError error = FrameValidationError::NONE;
-    uint8_t error_index = 0;
-    uint8_t expected = 0;
-    uint8_t actual = 0;
-    const bool parsed = this->parse_zone_frame_(this->response_frame_buffer_, &new_mask, &error, &error_index, &expected, &actual);
-    if (parsed) {
-      this->apply_zone_mask_(new_mask, true);
-      if (this->pending_response_command_ != 0) {
-        this->pending_response_command_ = 0;
-      }
-      this->reset_response_parser_();
-      this->flush_discarded_invalid_bytes_log_();
-      continue;
-    }
-
-    ESP_LOGW(TAG,
-             "Discarded invalid frame [%02X %02X %02X %02X %02X %02X %02X %02X]: %s (index=%u expected=0x%02X got=0x%02X)",
-             this->response_frame_buffer_[0], this->response_frame_buffer_[1], this->response_frame_buffer_[2],
-             this->response_frame_buffer_[3], this->response_frame_buffer_[4], this->response_frame_buffer_[5],
-             this->response_frame_buffer_[6], this->response_frame_buffer_[7],
-             this->frame_validation_error_to_string_(error), error_index, expected, actual);
-    this->discarded_invalid_byte_count_ += FRAME_LEN;
-    this->reset_response_parser_();
-    this->flush_discarded_non_frame_start_bytes_log_();
+    
   }
 
   if (millis() - this->last_state_request_ms_ >= STATE_REQUEST_INTERVAL_MS) {
