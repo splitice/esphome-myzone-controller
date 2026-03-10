@@ -39,6 +39,8 @@ class MyZoneController : public Component, public uart::UARTDevice {
   void save_zone_mask_();
   void load_zone_mask_();
   bool should_ignore_echo_(uint8_t value);
+  bool is_waiting_for_response_() const;
+  void flush_discarded_invalid_bytes_log_();
 
   GPIOPin *rse_pin_{nullptr};
   MyZoneSwitch *zone_switches_[6]{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
@@ -47,6 +49,9 @@ class MyZoneController : public Component, public uart::UARTDevice {
   uint8_t pending_zone_command_echo_{0};
   uint32_t pending_zone_command_echo_ms_{0};
   uint32_t last_state_request_ms_{0};
+  uint8_t pending_response_command_{0};
+  uint32_t response_wait_started_ms_{0};
+  uint32_t discarded_invalid_byte_count_{0};
 };
 
 }  // namespace myzone

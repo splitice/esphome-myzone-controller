@@ -13,6 +13,7 @@ static const uint8_t ZONE_MASK_ALL = (1 << ZONE_COUNT) - 1;
 static const uint8_t ZONE_RESYNC_INDEX = 0;
 static const uint32_t COMMAND_ECHO_IGNORE_WINDOW_MS = 250;
 static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
+static const uint32_t RESPONSE_WAIT_WINDOW_MS = 200;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
 
 void MyZoneSwitch::write_state(bool state) { this->parent_->toggle_zone(this->zone_index_, state); }
@@ -32,19 +33,38 @@ void MyZoneController::setup() {
 }
 
 void MyZoneController::loop() {
+  if (this->pending_response_command_ != 0 && !this->is_waiting_for_response_()) {
+    ESP_LOGD(TAG, "Timed out waiting for response to 0x%02X", this->pending_response_command_);
+    this->pending_response_command_ = 0;
+    this->flush_discarded_invalid_bytes_log_();
+  }
+
   while (this->available() > 0) {
     uint8_t value = 0;
     if (!this->read_byte(&value)) {
       break;
     }
+
+    if (!this->is_waiting_for_response_()) {
+      this->discarded_invalid_byte_count_++;
+      continue;
+    }
+
+    if (value == this->pending_response_command_) {
+      ESP_LOGV(TAG, "Ignoring echoed command byte 0x%02X", value);
+      continue;
+    }
+
     if (value == REQUEST_STATE) {
       continue;
     }
     if (this->should_ignore_echo_(value)) {
       continue;
     }
+
     uint8_t new_mask = value & ZONE_MASK_ALL;
     this->apply_zone_mask_(new_mask, true);
+    this->pending_response_command_ = 0;
   }
 
   if (millis() - this->last_state_request_ms_ >= STATE_REQUEST_INTERVAL_MS) {
@@ -110,6 +130,8 @@ void MyZoneController::send_command_(uint8_t command) {
 
   this->write_byte(command);
   this->flush();
+  this->pending_response_command_ = command;
+  this->response_wait_started_ms_ = millis();
 
   if (this->rse_pin_ != nullptr) {
     this->rse_pin_->digital_write(true);
@@ -165,6 +187,22 @@ bool MyZoneController::should_ignore_echo_(uint8_t value) {
   ESP_LOGD(TAG, "Ignoring echoed command byte 0x%02X", value);
   this->pending_zone_command_echo_ = 0;
   return true;
+}
+
+bool MyZoneController::is_waiting_for_response_() const {
+  if (this->pending_response_command_ == 0) {
+    return false;
+  }
+  return millis() - this->response_wait_started_ms_ <= RESPONSE_WAIT_WINDOW_MS;
+}
+
+void MyZoneController::flush_discarded_invalid_bytes_log_() {
+  if (this->discarded_invalid_byte_count_ == 0) {
+    return;
+  }
+
+  ESP_LOGW(TAG, "Discarded %u invalid byte(s)", this->discarded_invalid_byte_count_);
+  this->discarded_invalid_byte_count_ = 0;
 }
 
 }  // namespace myzone
