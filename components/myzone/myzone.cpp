@@ -11,6 +11,7 @@ static const uint8_t REQUEST_STATE = 0xC0;
 static const uint8_t ZONE_COUNT = 6;
 static const uint8_t ZONE_MASK_ALL = (1 << ZONE_COUNT) - 1;
 static const uint8_t ZONE_RESYNC_INDEX = 0;
+static const uint32_t COMMAND_ECHO_IGNORE_WINDOW_MS = 250;
 static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
 
@@ -37,6 +38,9 @@ void MyZoneController::loop() {
       break;
     }
     if (value == REQUEST_STATE) {
+      continue;
+    }
+    if (this->should_ignore_echo_(value)) {
       continue;
     }
     uint8_t new_mask = value & ZONE_MASK_ALL;
@@ -88,6 +92,8 @@ void MyZoneController::toggle_zone(uint8_t index, bool state) {
   }
 
   ESP_LOGI(TAG, "Changing zone %d to %s", index + 1, state ? "enabled" : "disabled");
+  this->pending_zone_command_echo_ = zone_code;
+  this->pending_zone_command_echo_ms_ = millis();
   this->send_command_(zone_code);
   this->request_state_();
 }
@@ -140,6 +146,25 @@ void MyZoneController::load_zone_mask_() {
   if (!this->zone_state_pref_.load(&this->zone_mask_)) {
     this->zone_mask_ = 0;
   }
+}
+
+bool MyZoneController::should_ignore_echo_(uint8_t value) {
+  if (this->pending_zone_command_echo_ == 0) {
+    return false;
+  }
+
+  if (millis() - this->pending_zone_command_echo_ms_ > COMMAND_ECHO_IGNORE_WINDOW_MS) {
+    this->pending_zone_command_echo_ = 0;
+    return false;
+  }
+
+  if (value != this->pending_zone_command_echo_) {
+    return false;
+  }
+
+  ESP_LOGD(TAG, "Ignoring echoed command byte 0x%02X", value);
+  this->pending_zone_command_echo_ = 0;
+  return true;
 }
 
 }  // namespace myzone

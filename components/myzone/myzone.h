@@ -38,11 +38,14 @@ class MyZoneController : public Component, public uart::UARTDevice {
   void apply_zone_mask_(uint8_t mask, bool persist);
   void save_zone_mask_();
   void load_zone_mask_();
+  bool should_ignore_echo_(uint8_t value);
 
   GPIOPin *rse_pin_{nullptr};
   MyZoneSwitch *zone_switches_[6]{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
   ESPPreferenceObject zone_state_pref_;
   uint8_t zone_mask_{0};
+  uint8_t pending_zone_command_echo_{0};
+  uint32_t pending_zone_command_echo_ms_{0};
   uint32_t last_state_request_ms_{0};
 };
 
