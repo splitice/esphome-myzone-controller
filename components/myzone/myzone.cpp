@@ -8,7 +8,7 @@ namespace myzone {
 
 static const char *const TAG = "myzone";
 static const uint8_t REQUEST_STATE = 0xC0;
-static const uint8_t ZONE_COUNT = 5;
+static const uint8_t ZONE_COUNT = 6;
 static const uint8_t ZONE_MASK_ALL = (1 << ZONE_COUNT) - 1;
 static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";

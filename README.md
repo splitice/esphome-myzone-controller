@@ -31,4 +31,6 @@ myzone:
     name: Zone 4
   zone_5:
     name: Zone 5
+  zone_6:
+    name: Zone 6
 ```
