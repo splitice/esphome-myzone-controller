@@ -5,7 +5,6 @@
 
 #ifdef USE_ESP_IDF
 #include "driver/uart.h"
-#include "hal/uart_ll.h"
 #include "esphome/components/uart/uart_component_esp_idf.h"
 #endif
 
@@ -299,9 +298,11 @@ void MyZoneController::log_esp_idf_uart_errors_() {
     return;
   }
 
-  const auto uart_num = static_cast<uart_port_t>(idf_parent->get_hw_serial_number());
-  uart_dev_t *hw = UART_LL_GET_HW(uart_num);
-  uint32_t intr_status = uart_ll_get_intsts_mask(hw);
+  const auto uart_num = static_cast<uart_port_t>(idf_parent->get_uart_num());
+  uint32_t intr_status = 0;
+  if (uart_get_intr_status(uart_num, &intr_status) != ESP_OK) {
+    return;
+  }
 
   uint32_t clear_mask = 0;
   bool has_error = false;
@@ -312,7 +313,7 @@ void MyZoneController::log_esp_idf_uart_errors_() {
       ESP_LOGW(TAG, "UART parity error detected (IDF)");
       this->last_uart_error_log_ms_ = millis();
     }
-    clear_mask |= UART_INTR_PARITY_ERR;
+    clear_mask |= UART_PARITY_ERR_INT_CLR_M;
     has_error = true;
   }
 #endif
@@ -323,7 +324,7 @@ void MyZoneController::log_esp_idf_uart_errors_() {
       ESP_LOGW(TAG, "UART frame error detected (IDF)");
       this->last_uart_error_log_ms_ = millis();
     }
-    clear_mask |= UART_INTR_FRAM_ERR;
+    clear_mask |= UART_FRM_ERR_INT_CLR_M;
     has_error = true;
   }
 #endif
@@ -334,13 +335,13 @@ void MyZoneController::log_esp_idf_uart_errors_() {
       ESP_LOGW(TAG, "UART FIFO overflow detected (IDF)");
       this->last_uart_error_log_ms_ = millis();
     }
-    clear_mask |= UART_INTR_RXFIFO_OVF;
+    clear_mask |= UART_FIFO_OVF_INT_CLR_M;
     has_error = true;
   }
 #endif
 
   if (has_error && clear_mask != 0) {
-    uart_ll_clr_intsts_mask(hw, clear_mask);
+    uart_clear_intr_status(uart_num, clear_mask);
   }
 }
 #endif
