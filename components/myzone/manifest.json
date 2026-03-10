@@ -1,0 +1,10 @@
+{
+  "domain": "myzone",
+  "name": "MyZone Controller",
+  "dependencies": [
+    "uart"
+  ],
+  "codeowners": [
+    "@splitice"
+  ]
+}
