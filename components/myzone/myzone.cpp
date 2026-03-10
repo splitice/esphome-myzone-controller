@@ -27,6 +27,7 @@ void MyZoneSwitch::apply_state_from_controller(bool state) { this->publish_state
 void MyZoneController::setup() {
   if (this->rse_pin_ != nullptr) {
     this->rse_pin_->setup();
+    this->rse_pin_->pin_mode(gpio::FLAG_OUTPUT);
     this->rse_pin_->digital_write(false);
   }
 
