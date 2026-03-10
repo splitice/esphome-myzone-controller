@@ -10,6 +10,7 @@ static const char *const TAG = "myzone";
 static const uint8_t REQUEST_STATE = 0xC0;
 static const uint8_t ZONE_COUNT = 6;
 static const uint8_t ZONE_MASK_ALL = (1 << ZONE_COUNT) - 1;
+static const uint8_t ZONE_RESYNC_INDEX = 0;
 static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
 
@@ -38,7 +39,8 @@ void MyZoneController::loop() {
     if (value == REQUEST_STATE) {
       continue;
     }
-    this->apply_zone_mask_(value & ZONE_MASK_ALL, true);
+    uint8_t new_mask = value & ZONE_MASK_ALL;
+    this->apply_zone_mask_(new_mask, true);
   }
 
   if (millis() - this->last_state_request_ms_ >= STATE_REQUEST_INTERVAL_MS) {
@@ -72,6 +74,12 @@ void MyZoneController::toggle_zone(uint8_t index, bool state) {
     return;
   }
 
+  // Zone ZONE_RESYNC_INDEX (zone 1) is always allowed for resync;
+  // other zones are skipped if they are not configured in the controller
+  if (index != ZONE_RESYNC_INDEX && this->zone_switches_[index] == nullptr) {
+    return;
+  }
+
   const uint8_t zone_code = 1 << index;
   const bool current_state = (this->zone_mask_ & zone_code) != 0;
   if (current_state == state) {
@@ -79,6 +87,7 @@ void MyZoneController::toggle_zone(uint8_t index, bool state) {
     return;
   }
 
+  ESP_LOGI(TAG, "Changing zone %d to %s", index + 1, state ? "enabled" : "disabled");
   this->send_command_(zone_code);
   this->request_state_();
 }
@@ -102,7 +111,9 @@ void MyZoneController::send_command_(uint8_t command) {
 }
 
 void MyZoneController::apply_zone_mask_(uint8_t mask, bool persist) {
-  this->zone_mask_ = mask & ZONE_MASK_ALL;
+  uint8_t new_mask = mask & ZONE_MASK_ALL;
+  bool state_changed = (new_mask != this->zone_mask_);
+  this->zone_mask_ = new_mask;
   for (uint8_t i = 0; i < ZONE_COUNT; i++) {
     auto *zone = this->zone_switches_[i];
     if (zone == nullptr) {
@@ -111,6 +122,14 @@ void MyZoneController::apply_zone_mask_(uint8_t mask, bool persist) {
     zone->apply_state_from_controller((this->zone_mask_ & (1 << i)) != 0);
   }
   if (persist) {
+    if (state_changed) {
+      char state_str[ZONE_COUNT * 2];
+      for (uint8_t i = 0; i < ZONE_COUNT; i++) {
+        state_str[i * 2] = ((this->zone_mask_ & (1 << i)) ? '1' : '0');
+        state_str[i * 2 + 1] = (i < ZONE_COUNT - 1) ? ':' : '\0';
+      }
+      ESP_LOGI(TAG, "New state %s", state_str);
+    }
     this->save_zone_mask_();
   }
 }
