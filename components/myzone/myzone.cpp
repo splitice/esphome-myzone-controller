@@ -141,7 +141,7 @@ void MyZoneController::loop() {
     
   }
 
-  if (this->response_frame_pos_ == 0 && this->command_frame_pos_ == 0) && (millis() - this->last_state_request_ms_) >= STATE_REQUEST_INTERVAL_MS) {
+  if (this->response_frame_pos_ == 0 && this->command_frame_pos_ == 0 && (millis() - this->last_state_request_ms_) >= STATE_REQUEST_INTERVAL_MS) {
     this->request_state_();
   }
 }
