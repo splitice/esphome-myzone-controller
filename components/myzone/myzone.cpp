@@ -76,12 +76,13 @@ void MyZoneController::toggle_zone(uint8_t index, bool state) {
   }
 
   this->send_command_(zone_code);
-  this->zone_mask_ ^= zone_code;
-  this->apply_zone_mask_(this->zone_mask_, true);
   this->request_state_();
 }
 
-void MyZoneController::request_state_() { this->send_command_(REQUEST_STATE); }
+void MyZoneController::request_state_() {
+  this->send_command_(REQUEST_STATE);
+  this->last_state_request_ms_ = millis();
+}
 
 void MyZoneController::send_command_(uint8_t command) {
   if (this->rse_pin_ != nullptr) {
@@ -94,7 +95,6 @@ void MyZoneController::send_command_(uint8_t command) {
   if (this->rse_pin_ != nullptr) {
     this->rse_pin_->digital_write(true);
   }
-  this->last_state_request_ms_ = millis();
 }
 
 void MyZoneController::apply_zone_mask_(uint8_t mask, bool persist) {
