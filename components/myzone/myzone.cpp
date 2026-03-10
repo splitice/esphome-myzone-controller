@@ -3,6 +3,11 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
+#ifdef USE_ESP_IDF
+#include "driver/uart.h"
+#include "esphome/components/uart/uart_component_esp_idf.h"
+#endif
+
 namespace esphome {
 namespace myzone {
 
@@ -19,6 +24,7 @@ static const uint32_t RESPONSE_WAIT_WINDOW_MS = 200;
 static const uint32_t COMMAND_FRAME_TIMEOUT_MS = 50;
 static const uint8_t RESPONSE_FRAME_START = 0x08;
 static const uint32_t RS485_DIRECTION_SETTLE_DELAY_US = 100;
+static const uint32_t UART_ERROR_LOG_THROTTLE_MS = 200;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
 static const uint8_t FRAME_LEN = 8;
 static const uint8_t COMMAND_FRAME_LEN = 3;
@@ -41,6 +47,10 @@ void MyZoneController::setup() {
 }
 
 void MyZoneController::loop() {
+#ifdef USE_ESP_IDF
+  this->log_esp_idf_uart_errors_();
+#endif
+
   if (this->pending_response_command_ != 0 && !this->is_waiting_for_response_()) {
     ESP_LOGD(TAG, "Timed out waiting for response to 0x%02X", this->pending_response_command_);
     this->pending_response_command_ = 0;
@@ -280,6 +290,61 @@ bool MyZoneController::is_waiting_for_response_() const {
   }
   return millis() - this->response_wait_started_ms_ <= RESPONSE_WAIT_WINDOW_MS;
 }
+
+#ifdef USE_ESP_IDF
+void MyZoneController::log_esp_idf_uart_errors_() {
+  auto *idf_parent = static_cast<uart::IDFUARTComponent *>(this->parent_);
+  if (idf_parent == nullptr) {
+    return;
+  }
+
+  const auto uart_num = static_cast<uart_port_t>(idf_parent->get_uart_num());
+  uint32_t intr_status = 0;
+  if (uart_get_intr_status(uart_num, &intr_status) != ESP_OK) {
+    return;
+  }
+
+  uint32_t clear_mask = 0;
+  bool has_error = false;
+
+#ifdef UART_PARITY_ERR_INT_ST_M
+  if ((intr_status & UART_PARITY_ERR_INT_ST_M) != 0) {
+    if (millis() - this->last_uart_error_log_ms_ >= UART_ERROR_LOG_THROTTLE_MS) {
+      ESP_LOGW(TAG, "UART parity error detected (IDF)");
+      this->last_uart_error_log_ms_ = millis();
+    }
+    clear_mask |= UART_PARITY_ERR_INT_CLR_M;
+    has_error = true;
+  }
+#endif
+
+#ifdef UART_FRM_ERR_INT_ST_M
+  if ((intr_status & UART_FRM_ERR_INT_ST_M) != 0) {
+    if (millis() - this->last_uart_error_log_ms_ >= UART_ERROR_LOG_THROTTLE_MS) {
+      ESP_LOGW(TAG, "UART frame error detected (IDF)");
+      this->last_uart_error_log_ms_ = millis();
+    }
+    clear_mask |= UART_FRM_ERR_INT_CLR_M;
+    has_error = true;
+  }
+#endif
+
+#ifdef UART_FIFO_OVF_INT_ST_M
+  if ((intr_status & UART_FIFO_OVF_INT_ST_M) != 0) {
+    if (millis() - this->last_uart_error_log_ms_ >= UART_ERROR_LOG_THROTTLE_MS) {
+      ESP_LOGW(TAG, "UART FIFO overflow detected (IDF)");
+      this->last_uart_error_log_ms_ = millis();
+    }
+    clear_mask |= UART_FIFO_OVF_INT_CLR_M;
+    has_error = true;
+  }
+#endif
+
+  if (has_error && clear_mask != 0) {
+    uart_clear_intr_status(uart_num, clear_mask);
+  }
+}
+#endif
 
 void MyZoneController::flush_discarded_invalid_bytes_log_() {
   if (this->discarded_invalid_byte_count_ == 0) {

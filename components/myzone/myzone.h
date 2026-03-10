@@ -47,6 +47,9 @@ class MyZoneController : public Component, public uart::UARTDevice {
   void load_zone_mask_();
   bool should_ignore_echo_(uint8_t value);
   bool is_waiting_for_response_() const;
+#ifdef USE_ESP_IDF
+  void log_esp_idf_uart_errors_();
+#endif
   void flush_discarded_invalid_bytes_log_();
   void flush_discarded_non_frame_start_bytes_log_();
   void reset_response_parser_();
@@ -72,6 +75,9 @@ class MyZoneController : public Component, public uart::UARTDevice {
   uint8_t command_frame_buffer_[3]{0};
   uint8_t command_frame_pos_{0};
   uint32_t command_frame_started_ms_{0};
+#ifdef USE_ESP_IDF
+  uint32_t last_uart_error_log_ms_{0};
+#endif
 };
 
 }  // namespace myzone

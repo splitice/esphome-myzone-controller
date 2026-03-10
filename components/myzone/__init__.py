@@ -54,8 +54,8 @@ CONFIG_SCHEMA = cv.Schema(
 
 FINAL_VALIDATE_SCHEMA = uart.final_validate_device_schema(
     "myzone",
-    data_bits=8,
-    stop_bits=2,
+    #data_bits=8,
+    #stop_bits=2,
     require_rx=True,
     require_tx=True,
 )
