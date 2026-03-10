@@ -16,6 +16,7 @@ static const uint8_t ZONE_RESYNC_INDEX = 0;
 static const uint32_t COMMAND_ECHO_IGNORE_WINDOW_MS = 250;
 static const uint32_t STATE_REQUEST_INTERVAL_MS = 10000;
 static const uint32_t RESPONSE_WAIT_WINDOW_MS = 200;
+static const uint32_t COMMAND_FRAME_TIMEOUT_MS = 50;
 static const uint8_t RESPONSE_FRAME_START = 0x08;
 static const uint32_t RS485_DIRECTION_SETTLE_DELAY_US = 100;
 static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
@@ -46,6 +47,11 @@ void MyZoneController::loop() {
     this->flush_discarded_non_frame_start_bytes_log_();
   }
 
+  if (this->command_frame_pos_ > 0 && millis() - this->command_frame_started_ms_ > COMMAND_FRAME_TIMEOUT_MS) {
+    ESP_LOGD(TAG, "Resetting partial command frame after timeout");
+    this->reset_command_parser_();
+  }
+
   while (this->available() > 0) {
     uint8_t value = 0;
     if (!this->read_byte(&value)) {
@@ -55,6 +61,7 @@ void MyZoneController::loop() {
     // parsing of button command
     if (this->command_frame_pos_ > 0) {
       this->command_frame_buffer_[this->command_frame_pos_++] = value;
+      this->command_frame_started_ms_ = millis();
       if (this->command_frame_pos_ < COMMAND_FRAME_LEN) {
         continue;
       }
@@ -72,7 +79,7 @@ void MyZoneController::loop() {
       continue;
     }
 
-    if(this->response_frame_pos_ > 0) {
+    if (this->response_frame_pos_ > 0) {
       this->response_frame_buffer_[this->response_frame_pos_++] = value;
       if (this->response_frame_pos_ < FRAME_LEN) {
         continue;
@@ -103,6 +110,7 @@ void MyZoneController::loop() {
       this->discarded_invalid_byte_count_ += FRAME_LEN;
       this->reset_response_parser_();
       this->flush_discarded_non_frame_start_bytes_log_();
+      continue;
     }
 
     // starting a response frame
@@ -110,14 +118,16 @@ void MyZoneController::loop() {
       if (value == COMMAND_FRAME_START) {
         this->flush_discarded_non_frame_start_bytes_log_();
         this->command_frame_buffer_[this->command_frame_pos_++] = value;
+        this->command_frame_started_ms_ = millis();
         continue;
       }
-      if(value == RESPONSE_FRAME_START) {
+      if (value == RESPONSE_FRAME_START) {
         this->flush_discarded_non_frame_start_bytes_log_();
         this->response_frame_buffer_[this->response_frame_pos_++] = value;
         continue;
       }
-      
+
+      this->discarded_non_frame_start_byte_count_++;
       ESP_LOGD(TAG, "Discarding non-protocol-start byte 0x%02X", value);
       continue;
     }
@@ -288,6 +298,7 @@ void MyZoneController::reset_response_parser_() {
 
 void MyZoneController::reset_command_parser_() {
   this->command_frame_pos_ = 0;
+  this->command_frame_started_ms_ = 0;
 }
 
 uint8_t MyZoneController::compute_zone_frame_checksum_(const uint8_t *frame) const {

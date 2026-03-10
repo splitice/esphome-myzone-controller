@@ -71,6 +71,7 @@ class MyZoneController : public Component, public uart::UARTDevice {
   uint8_t response_frame_pos_{0};
   uint8_t command_frame_buffer_[3]{0};
   uint8_t command_frame_pos_{0};
+  uint32_t command_frame_started_ms_{0};
 };
 
 }  // namespace myzone
