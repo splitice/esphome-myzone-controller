@@ -1,11 +1,10 @@
-# esphome-myzone-controller
-Integrate with a MyZone controller over RS485
+esphome:
+  name: myzone-controller
 
-## Example configuration
-
-```yaml
 external_components:
   - source: github://splitice/esphome-myzone-controller
+
+logger:
 
 uart:
   id: myzone_uart
@@ -19,16 +18,15 @@ uart:
 myzone:
   id: myzone_controller
   uart_id: myzone_uart
-  # Optional: active-low TX enable (RSE)
-  rse_pin: GPIO4
+  # Optional active-low TX enable
+  # rse_pin: GPIO4
   zone_1:
-    name: Zone 1
+    name: "Zone 1"
   zone_2:
-    name: Zone 2
+    name: "Zone 2"
   zone_3:
-    name: Zone 3
+    name: "Zone 3"
   zone_4:
-    name: Zone 4
+    name: "Zone 4"
   zone_5:
-    name: Zone 5
-```
+    name: "Zone 5"
