@@ -40,9 +40,7 @@ void MyZoneController::setup() {
 void MyZoneController::loop() {
   if (this->pending_response_command_ != 0 && !this->is_waiting_for_response_()) {
     ESP_LOGD(TAG, "Timed out waiting for response to 0x%02X", this->pending_response_command_);
-    this->reset_response_parser_();
     this->pending_response_command_ = 0;
-    this->flush_discarded_invalid_bytes_log_();
   }
 
   while (this->available() > 0) {
@@ -51,14 +49,8 @@ void MyZoneController::loop() {
       break;
     }
 
-    if (!this->is_waiting_for_response_()) {
-      this->discarded_invalid_byte_count_++;
-      continue;
-    }
-
     if (this->response_frame_pos_ == 0) {
       if (value != FRAME_LEN) {
-        this->discarded_invalid_byte_count_++;
         continue;
       }
       this->response_frame_buffer_[this->response_frame_pos_++] = value;
@@ -78,7 +70,9 @@ void MyZoneController::loop() {
     const bool parsed = this->parse_zone_frame_(this->response_frame_buffer_, &new_mask, &error, &error_index, &expected, &actual);
     if (parsed) {
       this->apply_zone_mask_(new_mask, true);
-      this->pending_response_command_ = 0;
+      if (this->pending_response_command_ != 0) {
+        this->pending_response_command_ = 0;
+      }
       this->reset_response_parser_();
       this->flush_discarded_invalid_bytes_log_();
       continue;
@@ -238,7 +232,7 @@ void MyZoneController::flush_discarded_invalid_bytes_log_() {
     return;
   }
 
-  ESP_LOGW(TAG, "Discarded %u invalid byte(s)", this->discarded_invalid_byte_count_);
+  ESP_LOGW(TAG, "Discarded %u invalid frame byte(s)", this->discarded_invalid_byte_count_);
   this->discarded_invalid_byte_count_ = 0;
 }
 
