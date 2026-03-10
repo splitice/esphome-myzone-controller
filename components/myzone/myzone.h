@@ -5,6 +5,11 @@
 #include "esphome/core/component.h"
 #include "esphome/core/preferences.h"
 
+#ifdef USE_ESP_IDF
+#include "driver/uart_select.h"
+#include "soc/soc_caps.h"
+#endif
+
 namespace esphome {
 namespace myzone {
 
@@ -48,7 +53,10 @@ class MyZoneController : public Component, public uart::UARTDevice {
   bool should_ignore_echo_(uint8_t value);
   bool is_waiting_for_response_() const;
 #ifdef USE_ESP_IDF
+  void register_esp_idf_uart_isr_callback_();
   void log_esp_idf_uart_errors_();
+  static void uart_select_isr_callback_(uart_port_t uart_num, uart_select_notif_t uart_select_notif,
+                                        BaseType_t *task_woken);
 #endif
   void flush_discarded_invalid_bytes_log_();
   void flush_discarded_non_frame_start_bytes_log_();
@@ -76,6 +84,11 @@ class MyZoneController : public Component, public uart::UARTDevice {
   uint8_t command_frame_pos_{0};
   uint32_t command_frame_started_ms_{0};
 #ifdef USE_ESP_IDF
+  static MyZoneController *uart_owner_by_num_[SOC_UART_NUM];
+  int8_t uart_num_{-1};
+  volatile uint32_t isr_parity_error_count_{0};
+  volatile uint32_t isr_frame_error_count_{0};
+  volatile uint32_t isr_fifo_overflow_count_{0};
   uint32_t last_uart_error_log_ms_{0};
 #endif
 };

@@ -5,7 +5,9 @@
 
 #ifdef USE_ESP_IDF
 #include "driver/uart.h"
+#include "driver/uart_select.h"
 #include "hal/uart_ll.h"
+#include "esphome/core/application.h"
 #include "esphome/components/uart/uart_component_esp_idf.h"
 #endif
 
@@ -30,6 +32,10 @@ static const char *const ZONE_MASK_PREF_KEY = "myzone_zone_mask";
 static const uint8_t FRAME_LEN = 8;
 static const uint8_t COMMAND_FRAME_LEN = 3;
 
+#ifdef USE_ESP_IDF
+MyZoneController *MyZoneController::uart_owner_by_num_[SOC_UART_NUM]{nullptr};
+#endif
+
 void MyZoneSwitch::write_state(bool state) { this->parent_->toggle_zone(this->zone_index_, state); }
 
 void MyZoneSwitch::apply_state_from_controller(bool state) { this->publish_state(state); }
@@ -44,6 +50,9 @@ void MyZoneController::setup() {
   this->zone_state_pref_ = global_preferences->make_preference<uint8_t>(fnv1_hash(ZONE_MASK_PREF_KEY));
   this->load_zone_mask_();
   this->apply_zone_mask_(this->zone_mask_, false);
+#ifdef USE_ESP_IDF
+  this->register_esp_idf_uart_isr_callback_();
+#endif
   this->request_state_();
 }
 
@@ -294,52 +303,86 @@ bool MyZoneController::is_waiting_for_response_() const {
 
 #ifdef USE_ESP_IDF
 void MyZoneController::log_esp_idf_uart_errors_() {
+  if (millis() - this->last_uart_error_log_ms_ < UART_ERROR_LOG_THROTTLE_MS) {
+    return;
+  }
+
+  const uint32_t parity_count = this->isr_parity_error_count_;
+  if (parity_count > 0) {
+    ESP_LOGW(TAG, "UART parity error(s) detected (IDF ISR): %u", parity_count);
+    this->isr_parity_error_count_ = 0;
+  }
+
+  const uint32_t frame_count = this->isr_frame_error_count_;
+  if (frame_count > 0) {
+    ESP_LOGW(TAG, "UART frame error(s) detected (IDF ISR): %u", frame_count);
+    this->isr_frame_error_count_ = 0;
+  }
+
+  const uint32_t overflow_count = this->isr_fifo_overflow_count_;
+  if (overflow_count > 0) {
+    ESP_LOGW(TAG, "UART FIFO overflow(s) detected (IDF ISR): %u", overflow_count);
+    this->isr_fifo_overflow_count_ = 0;
+  }
+
+  if (parity_count > 0 || frame_count > 0 || overflow_count > 0) {
+    this->last_uart_error_log_ms_ = millis();
+  }
+}
+
+void MyZoneController::register_esp_idf_uart_isr_callback_() {
   auto *idf_parent = static_cast<uart::IDFUARTComponent *>(this->parent_);
   if (idf_parent == nullptr) {
     return;
   }
 
-  const auto uart_num = static_cast<uart_port_t>(idf_parent->get_hw_serial_number());
+  this->uart_num_ = static_cast<int8_t>(idf_parent->get_hw_serial_number());
+  if (this->uart_num_ < 0 || this->uart_num_ >= SOC_UART_NUM) {
+    return;
+  }
+
+  uart_owner_by_num_[this->uart_num_] = this;
+  uart_set_select_notif_callback(static_cast<uart_port_t>(this->uart_num_), &MyZoneController::uart_select_isr_callback_);
+
+  const uint32_t intr_mask = UART_INTR_PARITY_ERR | UART_INTR_FRAM_ERR | UART_INTR_RXFIFO_OVF;
+  uart_enable_intr_mask(static_cast<uart_port_t>(this->uart_num_), intr_mask);
+}
+
+void MyZoneController::uart_select_isr_callback_(uart_port_t uart_num, uart_select_notif_t uart_select_notif,
+                                                 BaseType_t *task_woken) {
+  if (uart_select_notif == UART_SELECT_READ_NOTIF) {
+    Application::wake_loop_isrsafe(task_woken);
+  }
+
+  if (uart_num < 0 || uart_num >= SOC_UART_NUM) {
+    return;
+  }
+
+  auto *owner = uart_owner_by_num_[uart_num];
+  if (owner == nullptr) {
+    return;
+  }
+
   uart_dev_t *hw = UART_LL_GET_HW(uart_num);
-  uint32_t intr_status = uart_ll_get_intsts_mask(hw);
-
+  const uint32_t status = uart_ll_get_intsts_mask(hw);
   uint32_t clear_mask = 0;
-  bool has_error = false;
 
-#ifdef UART_PARITY_ERR_INT_ST_M
-  if ((intr_status & UART_PARITY_ERR_INT_ST_M) != 0) {
-    if (millis() - this->last_uart_error_log_ms_ >= UART_ERROR_LOG_THROTTLE_MS) {
-      ESP_LOGW(TAG, "UART parity error detected (IDF)");
-      this->last_uart_error_log_ms_ = millis();
-    }
+  if ((status & UART_INTR_PARITY_ERR) != 0) {
+    owner->isr_parity_error_count_++;
     clear_mask |= UART_INTR_PARITY_ERR;
-    has_error = true;
   }
-#endif
 
-#ifdef UART_FRM_ERR_INT_ST_M
-  if ((intr_status & UART_FRM_ERR_INT_ST_M) != 0) {
-    if (millis() - this->last_uart_error_log_ms_ >= UART_ERROR_LOG_THROTTLE_MS) {
-      ESP_LOGW(TAG, "UART frame error detected (IDF)");
-      this->last_uart_error_log_ms_ = millis();
-    }
+  if ((status & UART_INTR_FRAM_ERR) != 0) {
+    owner->isr_frame_error_count_++;
     clear_mask |= UART_INTR_FRAM_ERR;
-    has_error = true;
   }
-#endif
 
-#ifdef UART_FIFO_OVF_INT_ST_M
-  if ((intr_status & UART_FIFO_OVF_INT_ST_M) != 0) {
-    if (millis() - this->last_uart_error_log_ms_ >= UART_ERROR_LOG_THROTTLE_MS) {
-      ESP_LOGW(TAG, "UART FIFO overflow detected (IDF)");
-      this->last_uart_error_log_ms_ = millis();
-    }
+  if ((status & UART_INTR_RXFIFO_OVF) != 0) {
+    owner->isr_fifo_overflow_count_++;
     clear_mask |= UART_INTR_RXFIFO_OVF;
-    has_error = true;
   }
-#endif
 
-  if (has_error && clear_mask != 0) {
+  if (clear_mask != 0) {
     uart_ll_clr_intsts_mask(hw, clear_mask);
   }
 }
